@@ -340,3 +340,26 @@ int_fast32_t pulse_move_sink_input(uint32_t sink_input_idx,
 
 	return 0;
 }
+
+int_fast32_t pulse_unload_module(uint32_t idx, pa_context_success_cb_t cb,
+				 void *userdata)
+{
+	if (pulse_context_ready() < 0)
+		return -1;
+
+	pulse_lock();
+
+	pa_operation *op =
+		pa_context_unload_module(pulse_context, idx, cb, userdata);
+	if (!op) {
+		pulse_unlock();
+		return -1;
+	}
+	while (pa_operation_get_state(op) == PA_OPERATION_RUNNING)
+		pulse_wait();
+	pa_operation_unref(op);
+
+	pulse_unlock();
+
+	return 0;
+}

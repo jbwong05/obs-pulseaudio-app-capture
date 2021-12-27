@@ -15,6 +15,10 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <inttypes.h>
 #include <pulse/stream.h>
 #include <pulse/context.h>
@@ -150,3 +154,10 @@ int_fast32_t pulse_load_new_combine_module(const char *name,
 int_fast32_t pulse_move_sink_input(uint32_t sink_input_idx,
 				   uint32_t new_sink_idx,
 				   pa_context_success_cb_t cb, void *userdata);
+
+int_fast32_t pulse_unload_module(uint32_t idx, pa_context_success_cb_t cb,
+				 void *userdata);
+
+#ifdef __cplusplus
+}
+#endif

@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <util/bmem.h>
 #include <util/util_uint64.h>
 #include <obs-module.h>
-#include "plugin-macros.h.in"
+#include "plugin-macros.generated.h"
 #include "pulse-wrapper.h"
 #include <unordered_map>
 #include <string>
@@ -405,13 +405,10 @@ static void pulse_client_info_list_cb(pa_context *c, const pa_client_info *i,
 				      int eol, void *userdata)
 {
 	UNUSED_PARAMETER(c);
-	if (eol != 0 || i->index != PA_INVALID_INDEX)
+	if (eol || i->index == PA_INVALID_INDEX)
 		goto skip;
 
-	//char index[11];
-	//memset(index, 0, sizeof(index));
-	//snprintf(index, 10, "%d", i->index);
-	// name is the index, value is the client name
+	blog(LOG_INFO, "adding %s to list", i->name);
 	obs_property_list_add_string((obs_property_t *)userdata, i->name,
 				     i->name);
 
@@ -429,14 +426,11 @@ static obs_properties_t *pulse_properties()
 		props, "client", obs_module_text("Device"), OBS_COMBO_TYPE_LIST,
 		OBS_COMBO_FORMAT_STRING);
 
+	blog(LOG_INFO, "%s", "initting");
 	pulse_init();
+	blog(LOG_INFO, "%s", "finished initting now getting client list");
 	pulse_get_client_info_list(pulse_client_info_list_cb, (void *)clients);
-
-	size_t count = obs_property_list_item_count(clients);
-
-	//if (count > 0)
-	//	obs_property_list_insert_string(
-	//		clients, 0, obs_module_text("Default"), "default");
+	blog(LOG_INFO, "%s", "finished getting client list");
 
 	return props;
 }
@@ -453,7 +447,7 @@ static obs_properties_t *pulse_input_properties(void *unused)
  */
 static void pulse_defaults(obs_data_t *settings)
 {
-	obs_data_set_default_string(settings, "client", "default");
+	obs_data_set_default_string(settings, "client", NULL);
 }
 
 /**
@@ -465,6 +459,8 @@ static const char *pulse_input_getname(void *unused)
 	return obs_module_text("PulseAppInput");
 }
 
+static void unload_module_cb(pa_context *c, int success, void *userdata) {}
+
 /**
  * Destroy the plugin object and free all memory
  */
@@ -474,6 +470,13 @@ static void pulse_destroy(void *vptr)
 
 	if (!data)
 		return;
+
+	// Unload loaded modules
+	auto iter = data->combine_modules.begin();
+	while (iter != data->combine_modules.end()) {
+		pulse_unload_module(iter->second, unload_module_cb, 0);
+		iter++;
+	}
 
 	if (data->stream)
 		pulse_stop_recording(data);
@@ -493,7 +496,7 @@ static void get_client_idx_cb(pa_context *c, const pa_client_info *i, int eol,
 {
 	PULSE_DATA(userdata);
 
-	if (eol == 0 && data->client_idx == PA_INVALID_INDEX &&
+	if (!eol && data->client_idx != PA_INVALID_INDEX &&
 	    strcmp(data->client, i->name) == 0) {
 		data->client_idx = i->index;
 	} else {
@@ -506,7 +509,7 @@ static void get_sink_input_cb(pa_context *c, const pa_sink_input_info *i,
 {
 	PULSE_DATA(userdata);
 
-	if (eol == 0 && data->sink_input_idx == PA_INVALID_INDEX &&
+	if (!eol && data->sink_input_idx != PA_INVALID_INDEX &&
 	    data->client_idx == i->client) {
 		data->sink_input_idx = i->index;
 		data->sink_input_sink_idx = i->sink;
@@ -520,7 +523,7 @@ static void get_sink_name_by_index_cb(pa_context *c, const pa_sink_info *i,
 {
 	PULSE_DATA(userdata);
 
-	if (eol == 0 && i->index != PA_INVALID_INDEX) {
+	if (!eol && i->index != PA_INVALID_INDEX) {
 		data->sink_input_sink_name = bstrdup(i->name);
 	} else {
 		pulse_signal(0);
@@ -555,7 +558,10 @@ static void pulse_update(void *vptr, obs_data_t *settings)
 	const char *new_client;
 
 	new_client = obs_data_get_string(settings, "client");
-	if (!data->client || strcmp(data->client, new_client) != 0) {
+	blog(LOG_INFO, "new client: %s", new_client);
+	if (new_client &&
+	    (!data->client || strcmp(data->client, new_client) != 0)) {
+		blog(LOG_INFO, "need to restart");
 		if (data->client)
 			bfree(data->client);
 		data->client = bstrdup(new_client);
@@ -567,12 +573,15 @@ static void pulse_update(void *vptr, obs_data_t *settings)
 	if (!restart)
 		return;
 
-	if (data->stream)
-		pulse_stop_recording(data);
-
 	// Move existing sink-input back to old sink
-	pulse_move_sink_input(data->sink_input_idx, data->sink_input_sink_idx,
-			      move_sink_input_cb, data);
+	if (data->sink_input_idx != PA_INVALID_INDEX &&
+	    data->sink_input_sink_idx != PA_INVALID_INDEX) {
+		blog(LOG_INFO, "moving sink input %d to sink %d",
+		     data->sink_input_idx, data->sink_input_sink_idx);
+		pulse_move_sink_input(data->sink_input_idx,
+				      data->sink_input_sink_idx,
+				      move_sink_input_cb, data);
+	}
 
 	if (!data->move_success) {
 		return;
@@ -580,6 +589,7 @@ static void pulse_update(void *vptr, obs_data_t *settings)
 
 	// Find client idx
 	pulse_get_client_info_list(get_client_idx_cb, data);
+	blog(LOG_INFO, "searching for client index");
 
 	if (data->client_idx == PA_INVALID_INDEX) {
 		return;
@@ -587,6 +597,7 @@ static void pulse_update(void *vptr, obs_data_t *settings)
 
 	// Find sink-input with corresponding client
 	data->sink_input_idx = PA_INVALID_INDEX;
+	blog(LOG_INFO, "finding sink-input for the corresponding client");
 	pulse_get_sink_input_info_list(get_sink_input_cb, data);
 
 	if (data->sink_input_idx == PA_INVALID_INDEX) {
@@ -596,7 +607,11 @@ static void pulse_update(void *vptr, obs_data_t *settings)
 	if (data->combine_modules.find(data->sink_input_sink_idx) ==
 	    data->combine_modules.end()) {
 		// A module for this sink has not yet been loaded
+		blog(LOG_INFO,
+		     "module for sink input sink index %d has not been loaded",
+		     data->sink_input_sink_idx);
 
+		blog(LOG_INFO, "getting sink name");
 		// Get sink name from index
 		pulse_get_sink_name_by_index(data->sink_input_sink_idx,
 					     get_sink_name_by_index_cb, data);
@@ -605,6 +620,8 @@ static void pulse_update(void *vptr, obs_data_t *settings)
 		data->load_module_success = 1;
 		string name = "OBSPulseAppRecord" + string(data->client);
 		string args = "slaves=" + string(data->sink_input_sink_name);
+		blog(LOG_INFO, "loading new module %s with args %s",
+		     name.c_str(), args.c_str());
 		pulse_load_new_combine_module(name.c_str(), args.c_str(),
 					      load_new_combine_module_cb, data);
 
@@ -617,6 +634,8 @@ static void pulse_update(void *vptr, obs_data_t *settings)
 	data->move_success = 1;
 	uint32_t combine_module_idx =
 		data->combine_modules.find(data->sink_input_sink_idx)->second;
+	blog(LOG_INFO, "moving sink input %d to sink index %d",
+	     data->sink_input_idx, combine_module_idx);
 	pulse_move_sink_input(data->sink_input_idx, combine_module_idx,
 			      move_sink_input_cb, data);
 
@@ -624,7 +643,13 @@ static void pulse_update(void *vptr, obs_data_t *settings)
 		return;
 	}
 
+	if (data->stream) {
+		blog(LOG_INFO, "stopping recording");
+		pulse_stop_recording(data);
+	}
+
 	// Start recording from the combine module
+	blog(LOG_INFO, "starting recording");
 	pulse_start_recording(data);
 }
 
@@ -637,15 +662,23 @@ static void *pulse_create(obs_data_t *settings, obs_source_t *source)
 		(struct pulse_data *)bzalloc(sizeof(struct pulse_data));
 
 	data->source = source;
+	data->client_idx = PA_INVALID_INDEX;
+	data->sink_input_idx = PA_INVALID_INDEX;
+	data->sink_input_sink_idx = PA_INVALID_INDEX;
 
+	blog(LOG_INFO, "%s", "initting from create");
 	pulse_init();
+	blog(LOG_INFO, "%s",
+	     "finished initting from create now calling update");
 	pulse_update(data, settings);
+	blog(LOG_INFO, "%s", "finished updating from create");
 
 	return data;
 }
 
 static void *pulse_input_create(obs_data_t *settings, obs_source_t *source)
 {
+	blog(LOG_INFO, "%s", "creating");
 	return pulse_create(settings, source);
 }
 
