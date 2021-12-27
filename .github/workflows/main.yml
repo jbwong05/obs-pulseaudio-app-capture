@@ -1,0 +1,23 @@
+name: 'CI Multiplatform Build'
+
+on: [push, pull_request]
+
+jobs:
+  ubuntu64:
+    name: 'Build_linux'
+    runs-on: [ubuntu-18.04]
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v2.3.3
+      - name: 'Install dependencies'
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: ./CI/linux/install-dependencies-ubuntu.sh
+      - name: 'Build Plugin'
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: ./CI/linux/build-ubuntu.sh``
+      - name: 'Package Plugin'
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: ./CI/linux/package-ubuntu.sh
