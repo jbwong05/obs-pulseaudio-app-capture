@@ -292,10 +292,8 @@ int_fast32_t pulse_get_sink_name_by_index(uint32_t idx, pa_sink_info_cb_t cb,
 	return 0;
 }
 
-int_fast32_t pulse_load_new_combine_module(const char *name,
-					   const char *argument,
-					   pa_context_index_cb_t cb,
-					   void *userdata)
+int_fast32_t pulse_load_new_module(const char *name, const char *argument,
+				   pa_context_index_cb_t cb, void *userdata)
 {
 	if (pulse_context_ready() < 0)
 		return -1;
@@ -304,6 +302,28 @@ int_fast32_t pulse_load_new_combine_module(const char *name,
 
 	pa_operation *op = pa_context_load_module(pulse_context, name, argument,
 						  cb, userdata);
+	if (!op) {
+		pulse_unlock();
+		return -1;
+	}
+	while (pa_operation_get_state(op) == PA_OPERATION_RUNNING)
+		pulse_wait();
+	pa_operation_unref(op);
+
+	pulse_unlock();
+
+	return 0;
+}
+
+int_fast32_t pulse_get_sink_list(pa_sink_info_cb_t cb, void *userdata)
+{
+	if (pulse_context_ready() < 0)
+		return -1;
+
+	pulse_lock();
+
+	pa_operation *op =
+		pa_context_get_sink_info_list(pulse_context, cb, userdata);
 	if (!op) {
 		pulse_unlock();
 		return -1;

@@ -146,10 +146,10 @@ int_fast32_t pulse_get_sink_input_info_list(pa_sink_input_info_cb_t cb,
 int_fast32_t pulse_get_sink_name_by_index(uint32_t idx, pa_sink_info_cb_t cb,
 					  void *userdata);
 
-int_fast32_t pulse_load_new_combine_module(const char *name,
-					   const char *argument,
-					   pa_context_index_cb_t cb,
-					   void *userdata);
+int_fast32_t pulse_load_new_module(const char *name, const char *argument,
+				   pa_context_index_cb_t cb, void *userdata);
+
+int_fast32_t pulse_get_sink_list(pa_sink_info_cb_t cb, void *userdata);
 
 int_fast32_t pulse_move_sink_input(uint32_t sink_input_idx,
 				   uint32_t new_sink_idx,
