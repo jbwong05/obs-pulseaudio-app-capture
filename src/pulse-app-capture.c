@@ -23,10 +23,10 @@ MODULE_EXPORT const char *obs_module_description(void)
 	return "PulseAudio app capture";
 }
 
-extern struct obs_source_info pulse_app_capture;
+extern void register_source();
 
 bool obs_module_load(void)
 {
-	obs_register_source(&pulse_app_capture);
+	register_source();
 	return true;
 }

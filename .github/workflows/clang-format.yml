@@ -17,4 +17,4 @@ jobs:
       - name: Check the Formatting
         run: |
           ./formatcode.sh
-          ./ci/check-format.sh
+          ./CI/check-format.sh

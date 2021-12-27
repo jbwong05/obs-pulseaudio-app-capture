@@ -440,7 +440,7 @@ static obs_properties_t *pulse_properties()
 	return props;
 }
 
-static obs_properties_t *pulse_input_properties(void *unused)
+static obs_properties_t *pulse_app_input_properties(void *unused)
 {
 	UNUSED_PARAMETER(unused);
 
@@ -450,7 +450,7 @@ static obs_properties_t *pulse_input_properties(void *unused)
 /**
  * Get plugin defaults
  */
-static void pulse_defaults(obs_data_t *settings)
+static void pulse_app_input_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_string(settings, "client", NULL);
 }
@@ -458,7 +458,7 @@ static void pulse_defaults(obs_data_t *settings)
 /**
  * Returns the name of the plugin
  */
-static const char *pulse_input_getname(void *unused)
+static const char *pulse_app_input_getname(void *unused)
 {
 	UNUSED_PARAMETER(unused);
 	return obs_module_text("PulseAppInput");
@@ -479,7 +479,7 @@ static void unload_module_cb(pa_context *c, int success, void *userdata)
 /**
  * Destroy the plugin object and free all memory
  */
-static void pulse_destroy(void *vptr)
+static void pulse_app_input_destroy(void *vptr)
 {
 	PULSE_DATA(vptr);
 
@@ -590,16 +590,15 @@ static void get_sink_id_by_owner_cb(pa_context *c, const pa_sink_info *i,
 		struct combine_module *new_module = new combine_module();
 		new_module->module_idx = i->index;
 		new_module->owner_module_idx = data->next_owner_module_idx;
-		data->combine_modules->insert(
-			pair<uint32_t, combine_module *>(
-				data->sink_input_sink_idx, new_module));
+		data->combine_modules->insert(pair<uint32_t, combine_module *>(
+			data->sink_input_sink_idx, new_module));
 	}
 }
 
 /**
  * Update the input settings
  */
-static void pulse_update(void *vptr, obs_data_t *settings)
+static void pulse_app_input_update(void *vptr, obs_data_t *settings)
 {
 	PULSE_DATA(vptr);
 	bool restart = false;
@@ -728,34 +727,39 @@ static void *pulse_create(obs_data_t *settings, obs_source_t *source)
 	data->client_idx = PA_INVALID_INDEX;
 	data->sink_input_idx = PA_INVALID_INDEX;
 	data->sink_input_sink_idx = PA_INVALID_INDEX;
-	data->combine_modules =
-		new unordered_map<uint32_t, combine_module *>();
+	data->combine_modules = new unordered_map<uint32_t, combine_module *>();
 
 	blog(LOG_INFO, "%s", "initting from create");
 	pulse_init();
 	blog(LOG_INFO, "%s",
 	     "finished initting from create now calling update");
-	pulse_update(data, settings);
+	pulse_app_input_update(data, settings);
 	blog(LOG_INFO, "%s", "finished updating from create");
 
 	return data;
 }
 
-static void *pulse_input_create(obs_data_t *settings, obs_source_t *source)
+static void *pulse_app_input_create(obs_data_t *settings, obs_source_t *source)
 {
 	blog(LOG_INFO, "%s", "creating");
 	return pulse_create(settings, source);
 }
 
-struct obs_source_info pulse_app_capture = {
-	.id = "pulse_app_capture",
-	.type = OBS_SOURCE_TYPE_INPUT,
-	.output_flags = OBS_SOURCE_AUDIO | OBS_SOURCE_DO_NOT_DUPLICATE,
-	.get_name = pulse_input_getname,
-	.create = pulse_input_create,
-	.destroy = pulse_destroy,
-	.get_defaults = pulse_defaults,
-	.get_properties = pulse_input_properties,
-	.update = pulse_update,
-	.icon_type = OBS_ICON_TYPE_AUDIO_INPUT,
-};
+extern "C" void register_source();
+
+void register_source()
+{
+	struct obs_source_info info = {};
+	info.id = "pulse_app_capture";
+	info.type = OBS_SOURCE_TYPE_INPUT;
+	info.output_flags = OBS_SOURCE_AUDIO | OBS_SOURCE_DO_NOT_DUPLICATE;
+	info.get_name = pulse_app_input_getname;
+	info.create = pulse_app_input_create;
+	info.destroy = pulse_app_input_destroy;
+	info.get_defaults = pulse_app_input_defaults;
+	info.get_properties = pulse_app_input_properties;
+	info.update = pulse_app_input_update;
+	info.icon_type = OBS_ICON_TYPE_AUDIO_INPUT;
+
+	obs_register_source(&info);
+}
