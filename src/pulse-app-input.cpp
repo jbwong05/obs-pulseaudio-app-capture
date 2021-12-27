@@ -34,6 +34,11 @@ using std::string;
 #define PULSE_DATA(voidptr) \
 	struct pulse_data *data = (struct pulse_data *)voidptr;
 
+typedef struct combine_module {
+	uint32_t module_idx;
+	uint32_t owner_module_idx;
+} combine_module;
+
 struct pulse_data {
 	obs_source_t *source;
 	pa_stream *stream;
@@ -51,10 +56,9 @@ struct pulse_data {
 
 	/* combine module info */
 	// maps from sink input sink index to combine module index
-	unordered_map<uint32_t, uint32_t> *combine_modules;
+	unordered_map<uint32_t, combine_module *> *combine_modules;
 	int load_module_success;
-	// because pulse returns the owner module and not the module id
-	uint32_t owner_module_idx;
+	uint32_t next_owner_module_idx;
 
 	/* server info */
 	enum speaker_layout speakers;
@@ -500,7 +504,9 @@ static void pulse_destroy(void *vptr)
 	// Unload loaded modules
 	auto iter = data->combine_modules->begin();
 	while (iter != data->combine_modules->end()) {
-		pulse_unload_module(iter->second, unload_module_cb, 0);
+		pulse_unload_module(iter->second->owner_module_idx,
+				    unload_module_cb, 0);
+		delete iter->second;
 		iter++;
 	}
 
@@ -566,9 +572,7 @@ static void load_new_module_cb(pa_context *c, uint32_t idx, void *userdata)
 	PULSE_DATA(userdata);
 	blog(LOG_INFO, "new module idx %d", idx);
 	if (idx != PA_INVALID_INDEX) {
-		//data->combine_modules->insert(pair<uint32_t, uint32_t>(
-		//	data->sink_input_sink_idx, idx));
-		data->owner_module_idx = idx;
+		data->next_owner_module_idx = idx;
 	} else {
 		data->load_module_success = 0;
 	}
@@ -582,9 +586,13 @@ static void get_sink_id_by_owner_cb(pa_context *c, const pa_sink_info *i,
 	PULSE_DATA(userdata);
 	if (eol || i->index == PA_INVALID_INDEX) {
 		pulse_signal(0);
-	} else if (data->owner_module_idx == i->owner_module) {
-		data->combine_modules->insert(pair<uint32_t, uint32_t>(
-			data->sink_input_sink_idx, i->index));
+	} else if (data->next_owner_module_idx == i->owner_module) {
+		struct combine_module *new_module = new combine_module();
+		new_module->module_idx = i->index;
+		new_module->owner_module_idx = data->next_owner_module_idx;
+		data->combine_modules->insert(
+			pair<uint32_t, combine_module *>(
+				data->sink_input_sink_idx, new_module));
 	}
 }
 
@@ -668,6 +676,7 @@ static void pulse_update(void *vptr, obs_data_t *settings)
 			      string(data->sink_input_sink_name) +
 			      " slaves=" + string(data->sink_input_sink_name);
 		blog(LOG_INFO, "loading new module with args %s", args.c_str());
+		data->next_owner_module_idx = PA_INVALID_INDEX;
 		pulse_load_new_module("module-combine-sink", args.c_str(),
 				      load_new_module_cb, data);
 
@@ -685,7 +694,8 @@ static void pulse_update(void *vptr, obs_data_t *settings)
 	// Move sink-input to new module
 	data->move_success = 1;
 	uint32_t combine_module_idx =
-		data->combine_modules->find(data->sink_input_sink_idx)->second;
+		data->combine_modules->find(data->sink_input_sink_idx)
+			->second->module_idx;
 	blog(LOG_INFO, "moving sink input %d to sink index %d",
 	     data->sink_input_idx, combine_module_idx);
 	pulse_move_sink_input(data->sink_input_idx, combine_module_idx,
@@ -718,7 +728,8 @@ static void *pulse_create(obs_data_t *settings, obs_source_t *source)
 	data->client_idx = PA_INVALID_INDEX;
 	data->sink_input_idx = PA_INVALID_INDEX;
 	data->sink_input_sink_idx = PA_INVALID_INDEX;
-	data->combine_modules = new unordered_map<uint32_t, uint32_t>();
+	data->combine_modules =
+		new unordered_map<uint32_t, combine_module *>();
 
 	blog(LOG_INFO, "%s", "initting from create");
 	pulse_init();
