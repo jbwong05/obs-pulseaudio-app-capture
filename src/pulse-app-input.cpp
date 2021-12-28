@@ -428,7 +428,7 @@ static obs_properties_t *pulse_properties()
 {
 	obs_properties_t *props = obs_properties_create();
 	obs_property_t *clients = obs_properties_add_list(
-		props, "client", obs_module_text("Device"), OBS_COMBO_TYPE_LIST,
+		props, "client", obs_module_text("Client"), OBS_COMBO_TYPE_LIST,
 		OBS_COMBO_FORMAT_STRING);
 
 	blog(LOG_INFO, "%s", "initting");
