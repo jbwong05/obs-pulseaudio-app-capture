@@ -17,6 +17,8 @@ Simply add the source, select the application, and the audio should be recorded.
 * Each of these sources will end up loading its own `combine-sink` module. If you have a lot of these sources, you will end up with a lot of pulse modules being loaded. There may be a better way to reuse existing loaded modules instead creating new ones everytime, however there is something to be said for keeping each source in isolation, especially when different sources are on different scenes.
 * The functionality of this plugin depends heavily on loading the `combine-sink` pulse module. If the module is not available or cannot be loaded for whatever reason, the plugin will not function.
 * If OBS crashes before the plugin is able to destroy and clean itself up, lingering `combine-sink` modules will remain loaded afterwards. This may lead to unintended behavior when OBS is restarted.
+* Unexepcted behavior with applications like Chrome that unreister their sink-input
+* Audio won't be recorded from applications like Chrome that don't register a sink-input until audio is playing. Audio will only start recording when the OBS source is manually refreshed
 * This plugin is still experimental. Lots of other bugs are expected.
 
 ## Dependencies
