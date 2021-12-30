@@ -436,6 +436,7 @@ static obs_properties_t *pulse_properties()
 	blog(LOG_INFO, "%s", "finished initting now getting client list");
 	pulse_get_client_info_list(pulse_client_info_list_cb, (void *)clients);
 	blog(LOG_INFO, "%s", "finished getting client list");
+	pulse_unref();
 
 	return props;
 }
@@ -464,6 +465,38 @@ static const char *pulse_app_input_getname(void *unused)
 	return obs_module_text("PulseAppInput");
 }
 
+static void get_sink_input_cb(pa_context *c, const pa_sink_input_info *i,
+			      int eol, void *userdata)
+{
+	PULSE_DATA(userdata);
+
+	if (eol || i->index == PA_INVALID_INDEX ||
+	    data->sink_input_idx != PA_INVALID_INDEX) {
+		pulse_signal(0);
+	} else if (data->client_idx == i->client) {
+		blog(LOG_INFO,
+		     "found sink-input %s with index %d and sink index %d",
+		     i->name, i->index, i->sink);
+		data->sink_input_idx = i->index;
+		data->sink_input_sink_idx = i->sink;
+	}
+}
+
+static bool get_sink_input(struct pulse_data *data)
+{
+	// Find sink-input with corresponding client
+	data->sink_input_idx = PA_INVALID_INDEX;
+	data->sink_input_sink_idx = PA_INVALID_INDEX;
+	blog(LOG_INFO, "finding sink-input for the corresponding client");
+	pulse_get_sink_input_info_list(get_sink_input_cb, data);
+
+	if (data->sink_input_idx == PA_INVALID_INDEX) {
+		blog(LOG_INFO, "sink-input not found");
+		return false;
+	}
+	return true;
+}
+
 static void move_sink_input_cb(pa_context *c, int success, void *userdata)
 {
 	PULSE_DATA(userdata);
@@ -473,6 +506,7 @@ static void move_sink_input_cb(pa_context *c, int success, void *userdata)
 
 static void unload_module_cb(pa_context *c, int success, void *userdata)
 {
+	blog(LOG_INFO, "module unload success: %d", success);
 	pulse_signal(0);
 }
 
@@ -486,18 +520,23 @@ static void pulse_app_input_destroy(void *vptr)
 	if (!data)
 		return;
 
+	if (data->stream)
+		pulse_stop_recording(data);
+
 	// Move existing sink-input back to old sink
 	if (data->sink_input_idx != PA_INVALID_INDEX &&
 	    data->sink_input_sink_idx != PA_INVALID_INDEX) {
-		blog(LOG_INFO, "moving sink input %d to sink %d",
-		     data->sink_input_idx, data->sink_input_sink_idx);
-		pulse_move_sink_input(data->sink_input_idx,
-				      data->sink_input_sink_idx,
-				      move_sink_input_cb, data);
 
-		if (!data->move_success) {
-			blog(LOG_INFO, "move not successful");
-			return;
+		if (get_sink_input(data)) {
+			blog(LOG_INFO, "moving sink input %d to sink %d",
+			     data->sink_input_idx, data->sink_input_sink_idx);
+			pulse_move_sink_input(data->sink_input_idx,
+					      data->sink_input_sink_idx,
+					      move_sink_input_cb, data);
+
+			if (!data->move_success) {
+				blog(LOG_INFO, "move not successful");
+			}
 		}
 	}
 
@@ -510,11 +549,9 @@ static void pulse_app_input_destroy(void *vptr)
 		iter++;
 	}
 
-	delete data->combine_modules;
-
-	if (data->stream)
-		pulse_stop_recording(data);
 	pulse_unref();
+
+	delete data->combine_modules;
 
 	if (data->client)
 		bfree(data->client);
@@ -535,23 +572,6 @@ static void get_client_idx_cb(pa_context *c, const pa_client_info *i, int eol,
 		pulse_signal(0);
 	} else if (strcmp(data->client, i->name) == 0) {
 		data->client_idx = i->index;
-	}
-}
-
-static void get_sink_input_cb(pa_context *c, const pa_sink_input_info *i,
-			      int eol, void *userdata)
-{
-	PULSE_DATA(userdata);
-
-	if (eol || i->index == PA_INVALID_INDEX ||
-	    data->sink_input_idx != PA_INVALID_INDEX) {
-		pulse_signal(0);
-	} else if (data->client_idx == i->client) {
-		blog(LOG_INFO,
-		     "found sink-input %s with index %d and sink index %d",
-		     i->name, i->index, i->sink);
-		data->sink_input_idx = i->index;
-		data->sink_input_sink_idx = i->sink;
 	}
 }
 
@@ -595,6 +615,27 @@ static void get_sink_id_by_owner_cb(pa_context *c, const pa_sink_info *i,
 	}
 }
 
+static bool restore_sink(struct pulse_data *data)
+{
+	// Move existing sink-input back to old sink
+	if (data->sink_input_idx != PA_INVALID_INDEX &&
+	    data->sink_input_sink_idx != PA_INVALID_INDEX) {
+		blog(LOG_INFO, "moving sink input %d to sink %d",
+		     data->sink_input_idx, data->sink_input_sink_idx);
+		pulse_move_sink_input(data->sink_input_idx,
+				      data->sink_input_sink_idx,
+				      move_sink_input_cb, data);
+
+		if (!data->move_success) {
+			blog(LOG_INFO, "move not successful");
+			return false;
+		}
+
+		return true;
+	}
+	return true;
+}
+
 /**
  * Update the input settings
  */
@@ -620,19 +661,8 @@ static void pulse_app_input_update(void *vptr, obs_data_t *settings)
 	if (!restart)
 		return;
 
-	// Move existing sink-input back to old sink
-	if (data->sink_input_idx != PA_INVALID_INDEX &&
-	    data->sink_input_sink_idx != PA_INVALID_INDEX) {
-		blog(LOG_INFO, "moving sink input %d to sink %d",
-		     data->sink_input_idx, data->sink_input_sink_idx);
-		pulse_move_sink_input(data->sink_input_idx,
-				      data->sink_input_sink_idx,
-				      move_sink_input_cb, data);
-
-		if (!data->move_success) {
-			blog(LOG_INFO, "move not successful");
-			return;
-		}
+	if (!restore_sink(data)) {
+		return;
 	}
 
 	// Find client idx
@@ -645,14 +675,7 @@ static void pulse_app_input_update(void *vptr, obs_data_t *settings)
 		return;
 	}
 
-	// Find sink-input with corresponding client
-	data->sink_input_idx = PA_INVALID_INDEX;
-	data->sink_input_sink_idx = PA_INVALID_INDEX;
-	blog(LOG_INFO, "finding sink-input for the corresponding client");
-	pulse_get_sink_input_info_list(get_sink_input_cb, data);
-
-	if (data->sink_input_idx == PA_INVALID_INDEX) {
-		blog(LOG_INFO, "sink-input not found");
+	if (!get_sink_input(data)) {
 		return;
 	}
 
