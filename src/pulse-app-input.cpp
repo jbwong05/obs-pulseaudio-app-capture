@@ -636,6 +636,67 @@ static bool restore_sink(struct pulse_data *data)
 	return true;
 }
 
+static void load_new_module(struct pulse_data *data)
+{
+	blog(LOG_INFO, "looking for %d", data->sink_input_sink_idx);
+	if (data->combine_modules->find(data->sink_input_sink_idx) ==
+	    data->combine_modules->end()) {
+		// A module for this sink has not yet been loaded
+		blog(LOG_INFO,
+		     "module for sink input sink index %d has not been loaded",
+		     data->sink_input_sink_idx);
+
+		blog(LOG_INFO, "getting sink name");
+		// Get sink name from index
+		pulse_get_sink_name_by_index(data->sink_input_sink_idx,
+					     get_sink_name_by_index_cb, data);
+
+		// Load the new module
+		data->load_module_success = 1;
+		string args = "sink_name=OBSPulseAppRecord" +
+			      string(data->sink_input_sink_name) +
+			      " slaves=" + string(data->sink_input_sink_name);
+		blog(LOG_INFO, "loading new module with args %s", args.c_str());
+		data->next_owner_module_idx = PA_INVALID_INDEX;
+		pulse_load_new_module("module-combine-sink", args.c_str(),
+				      load_new_module_cb, data);
+
+		if (!data->load_module_success) {
+			blog(LOG_INFO, "Unable to load module");
+			return;
+		}
+		blog(LOG_INFO, "successfully loaded new module");
+
+		// Lookup module id with owner_module id
+		blog(LOG_INFO, "looking up new module id with owner module id");
+		pulse_get_sink_list(get_sink_id_by_owner_cb, data);
+	}
+}
+
+static bool move_to_combine_module(struct pulse_data *data)
+{
+	// Move sink-input to new module
+	data->move_success = 1;
+	auto iter = data->combine_modules->find(data->sink_input_sink_idx);
+
+	if (iter == data->combine_modules->end()) {
+		return false;
+	}
+
+	uint32_t combine_module_idx = iter->second->module_idx;
+	blog(LOG_INFO, "moving sink input %d to sink index %d",
+	     data->sink_input_idx, combine_module_idx);
+	pulse_move_sink_input(data->sink_input_idx, combine_module_idx,
+			      move_sink_input_cb, data);
+
+	if (!data->move_success) {
+		blog(LOG_INFO, "Unable to move sink input to combine module");
+		return false;
+	}
+
+	return true;
+}
+
 /**
  * Update the input settings
  */
@@ -679,52 +740,9 @@ static void pulse_app_input_update(void *vptr, obs_data_t *settings)
 		return;
 	}
 
-	blog(LOG_INFO, "looking for %d", data->sink_input_sink_idx);
-	if (data->combine_modules->find(data->sink_input_sink_idx) ==
-	    data->combine_modules->end()) {
-		// A module for this sink has not yet been loaded
-		blog(LOG_INFO,
-		     "module for sink input sink index %d has not been loaded",
-		     data->sink_input_sink_idx);
+	load_new_module(data);
 
-		blog(LOG_INFO, "getting sink name");
-		// Get sink name from index
-		pulse_get_sink_name_by_index(data->sink_input_sink_idx,
-					     get_sink_name_by_index_cb, data);
-
-		// Load the new module
-		data->load_module_success = 1;
-		string args = "sink_name=OBSPulseAppRecord" +
-			      string(data->sink_input_sink_name) +
-			      " slaves=" + string(data->sink_input_sink_name);
-		blog(LOG_INFO, "loading new module with args %s", args.c_str());
-		data->next_owner_module_idx = PA_INVALID_INDEX;
-		pulse_load_new_module("module-combine-sink", args.c_str(),
-				      load_new_module_cb, data);
-
-		if (!data->load_module_success) {
-			blog(LOG_INFO, "Unable to load module");
-			return;
-		}
-		blog(LOG_INFO, "successfully loaded new module");
-
-		// Lookup module id with owner_module id
-		blog(LOG_INFO, "looking up new module id with owner module id");
-		pulse_get_sink_list(get_sink_id_by_owner_cb, data);
-	}
-
-	// Move sink-input to new module
-	data->move_success = 1;
-	uint32_t combine_module_idx =
-		data->combine_modules->find(data->sink_input_sink_idx)
-			->second->module_idx;
-	blog(LOG_INFO, "moving sink input %d to sink index %d",
-	     data->sink_input_idx, combine_module_idx);
-	pulse_move_sink_input(data->sink_input_idx, combine_module_idx,
-			      move_sink_input_cb, data);
-
-	if (!data->move_success) {
-		blog(LOG_INFO, "Unable to move sink input to combine module");
+	if (!move_to_combine_module(data)) {
 		return;
 	}
 
@@ -736,6 +754,73 @@ static void pulse_app_input_update(void *vptr, obs_data_t *settings)
 	// Start recording from the combine module
 	blog(LOG_INFO, "starting recording");
 	pulse_start_recording(data);
+}
+
+void update_sink_input_info_cb(pa_context *c, const pa_sink_input_info *i,
+			       int eol, void *userdata)
+{
+	blog(LOG_INFO, "in callback");
+
+	PULSE_DATA(userdata);
+
+	if (eol || i->index == PA_INVALID_INDEX) {
+		pulse_signal(0);
+
+		// Checking if new sink corresponds to our client
+	} else if (data->client_idx != PA_INVALID_INDEX &&
+		   data->client_idx == i->client) {
+		data->sink_input_idx = i->index;
+
+		if (data->sink_input_sink_idx == PA_INVALID_INDEX) {
+			data->sink_input_sink_idx = i->sink;
+		}
+
+		// Move new sink-input to the module
+		load_new_module(data);
+
+		move_to_combine_module(data);
+	}
+
+	pulse_signal(0);
+}
+
+static void sink_event_cb(pa_context *c, pa_subscription_event_type_t t,
+			  uint32_t idx, void *userdata)
+{
+	PULSE_DATA(userdata);
+
+	if ((t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) ==
+	    PA_SUBSCRIPTION_EVENT_SINK_INPUT) {
+		if ((t & PA_SUBSCRIPTION_EVENT_TYPE_MASK) ==
+		    PA_SUBSCRIPTION_EVENT_NEW) {
+
+			blog(LOG_INFO, "new sink-input added %d", idx);
+
+			// Directly calling pulse function because pulse calls
+			// this callback on a helper thread and not the main
+			// thread
+			// Check if sink-input corresponds to the client
+			pa_operation *op = pa_context_get_sink_input_info(
+				c, idx, update_sink_input_info_cb, data);
+			if (!op) {
+				pulse_signal(0);
+				return;
+			}
+
+			pa_operation_unref(op);
+
+		} else if ((t & PA_SUBSCRIPTION_EVENT_TYPE_MASK) ==
+			   PA_SUBSCRIPTION_EVENT_REMOVE) {
+
+			blog(LOG_INFO, "sink-input removed %d", idx);
+
+			// Check if sink-input has been removed
+			if (data->sink_input_idx == idx) {
+				data->sink_input_idx = PA_INVALID_INDEX;
+			}
+		}
+	}
+	pulse_signal(0);
 }
 
 /**
@@ -754,6 +839,7 @@ static void *pulse_create(obs_data_t *settings, obs_source_t *source)
 
 	blog(LOG_INFO, "%s", "initting from create");
 	pulse_init();
+	pulse_subscribe_sink_input_events(sink_event_cb, data);
 	blog(LOG_INFO, "%s",
 	     "finished initting from create now calling update");
 	pulse_app_input_update(data, settings);

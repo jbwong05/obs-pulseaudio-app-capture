@@ -383,3 +383,47 @@ int_fast32_t pulse_unload_module(uint32_t idx, pa_context_success_cb_t cb,
 
 	return 0;
 }
+
+static void subscribe_cb(pa_context *c, int success, void *userdata)
+{
+	bool *result = (bool *)userdata;
+	*result = success != 0;
+	pulse_signal(0);
+}
+
+int_fast32_t pulse_subscribe_sink_input_events(pa_context_subscribe_cb_t cb,
+					       void *userdata)
+{
+	if (pulse_context_ready() < 0)
+		return -1;
+
+	pulse_lock();
+
+	bool success = true;
+
+	pa_operation *op = pa_context_subscribe(pulse_context,
+						PA_SUBSCRIPTION_MASK_SINK_INPUT,
+						subscribe_cb, &success);
+	if (!op) {
+		pulse_unlock();
+		return -1;
+	}
+	while (pa_operation_get_state(op) == PA_OPERATION_RUNNING)
+		pulse_wait();
+	pa_operation_unref(op);
+
+	pulse_unlock();
+
+	if (success) {
+		if (pulse_context_ready() < 0)
+			return -1;
+
+		pulse_lock();
+
+		pa_context_set_subscribe_callback(pulse_context, cb, userdata);
+
+		pulse_unlock();
+	}
+
+	return 0;
+}

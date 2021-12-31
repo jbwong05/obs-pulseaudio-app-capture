@@ -23,6 +23,7 @@ extern "C" {
 #include <pulse/stream.h>
 #include <pulse/context.h>
 #include <pulse/introspect.h>
+#include <pulse/subscribe.h>
 
 #pragma once
 
@@ -157,6 +158,9 @@ int_fast32_t pulse_move_sink_input(uint32_t sink_input_idx,
 
 int_fast32_t pulse_unload_module(uint32_t idx, pa_context_success_cb_t cb,
 				 void *userdata);
+
+int_fast32_t pulse_subscribe_sink_input_events(pa_context_subscribe_cb_t cb,
+					       void *userdata);
 
 #ifdef __cplusplus
 }
