@@ -5,7 +5,7 @@ on: [push, pull_request]
 jobs:
   ubuntu64:
     name: 'Build_linux'
-    runs-on: [ubuntu-18.04]
+    runs-on: [ubuntu-18.04, ubuntu-20.04]
     steps:
       - name: 'Checkout'
         uses: actions/checkout@v2.3.3
@@ -20,4 +20,6 @@ jobs:
       - name: 'Package Plugin'
         shell: bash
         working-directory: ${{ github.workspace }}
-        run: ./CI/linux/package-ubuntu.sh
+        run: |
+          ./CI/linux/package-ubuntu.sh
+          ./CI/linux/package.sh
