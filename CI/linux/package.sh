@@ -12,6 +12,6 @@ cp "$script_dir/../../build/$PLUGIN_NAME.so" "$script_dir/../../package/usr/lib/
 cp "$script_dir/../../data/locale/"*.ini "$script_dir/../../package/usr/share/obs/obs-plugins/$PLUGIN_NAME/"
 
 cd "$script_dir/../../package"
-rm -f "$PLUGIN_NAME-$PLUGIN_VERSION.zip"
-zip -r "$PLUGIN_NAME-$PLUGIN_VERSION.zip" "./usr"
+rm -f "$PLUGIN_NAME-$PLUGIN_VERSION.tar.gz"
+tar -cvf "$PLUGIN_NAME-$PLUGIN_VERSION.tar.gz" "./usr"
 cd ..
