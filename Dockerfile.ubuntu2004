@@ -1,8 +1,6 @@
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 WORKDIR /plugin
-ADD . /plugin
-COPY . /plugin
 
 RUN apt-get -qq update && \
     apt-get install -y software-properties-common && \
