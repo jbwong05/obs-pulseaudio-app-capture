@@ -7,6 +7,8 @@
 
 Similar to the [win-capture-audio](https://obsproject.com/forum/resources/win-capture-audio.1338/) plugin by [bozbez](https://obsproject.com/forum/members/bozbez.344203/) that allows for the capturing of audio from specific applications except for systems that use PulseAudio as their main sound server. Also influenced by the existing `linux-pulseaudio` plugin built into OBS as well as the [pactl](https://gitlab.freedesktop.org/pulseaudio/pulseaudio/-/blob/master/src/utils/pactl.c) utility built into PulseAudio <b>NOTE: This plugin is still experimental and under development. Bugs are expected</b>
 
+Note: This plugin is not under active development and has not been updated to support OBS 28.0 as I do not have time at the moment. If you wish to continue development of this plugin, feel free to fork the repo
+
 ## How It Works (Technical)
 PulseAudio uses a client server model to manage sound. Unfortunately (at least from what I can tell) it does not allow recording directly from a specific application as clients and the corresponding sink-inputs do not have monitors that can be recorded from. The way to get around this is to load a new `combine-sink` module, set the `combine-sink` module's sink (output) to be the same sink as the application, and then move the application's sink to be the new `combine-sink` module. Because the `combine-sink` module has a monitor, we can read the audio data from the monitor while the audio is still being sent to desired location. <b>Note:</b> While not ideal, this is actually the same method that `Zoom` uses in order to capture and share desktop audio on Linux devices running a PulseAudio server.
 
