@@ -85,28 +85,10 @@ if (( ! (${skips[(Ie)all]} + ${skips[(Ie)build]}) )) {
 
   local num_procs
 
-  case ${target} {
-    macos-*)
-      autoload -Uz read_codesign
-      if (( ${+CODESIGN} )) {
-        read_codesign
-      }
-
-      cmake_args+=(
-        -DCMAKE_OSX_ARCHITECTURES=${${target##*-}//universal/x86_64;arm64}
-        -DCMAKE_OSX_DEPLOYMENT_TARGET=${DEPLOYMENT_TARGET:-10.15}
-        -DOBS_CODESIGN_LINKER=ON
-        -DOBS_BUNDLE_CODESIGN_IDENTITY="${CODESIGN_IDENT:--}"
-      )
-      num_procs=$(( $(sysctl -n hw.ncpu) + 1 ))
-      ;;
-    linux-*)
-      cmake_args+=(
-        -DENABLE_PIPEWIRE=OFF
-      )
-      num_procs=$(( $(nproc) + 1 ))
-      ;;
-  }
+  cmake_args+=(
+    -DENABLE_PIPEWIRE=OFF
+  )
+  num_procs=$(( $(nproc) + 1 ))
 
   log_debug "Attempting to configure OBS with CMake arguments: ${cmake_args}"
   cmake -S . -B plugin_build_${target##*-} -G ${generator} ${cmake_args}
