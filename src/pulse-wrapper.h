@@ -144,6 +144,9 @@ pa_stream *pulse_stream_new(const char *name, const pa_sample_spec *ss,
 int_fast32_t pulse_get_sink_input_info_list(pa_sink_input_info_cb_t cb,
 					    void *userdata);
 
+int_fast32_t pulse_get_sink_info_list(pa_sink_info_cb_t cb,
+					    void *userdata);
+
 int_fast32_t pulse_get_sink_name_by_index(uint32_t idx, pa_sink_info_cb_t cb,
 					  void *userdata);
 

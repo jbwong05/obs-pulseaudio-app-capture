@@ -52,6 +52,10 @@ struct pulse_data {
 	uint32_t sink_input_sink_idx;
 	char *sink_input_sink_name;
 
+	/* sink info */
+	uint32_t sink_idx;
+	char *sink_monitor_source_name;
+
 	int move_success;
 
 	/* combine module info */
@@ -74,6 +78,8 @@ struct pulse_data {
 };
 
 static void pulse_stop_recording(struct pulse_data *data);
+
+static bool processing = false;
 
 /**
  * get obs from pulse audio format
@@ -315,11 +321,11 @@ static void pulse_source_info(pa_context *c, const pa_source_info *i, int eol,
  */
 static int_fast32_t pulse_start_recording(struct pulse_data *data)
 {
-	string monitor_name = "OBSPulseAppRecord" +
-			      string(data->sink_input_sink_name) + ".monitor";
+	//string monitor_name = "OBSPulseAppRecord" +
+	//		      string(data->sink_input_sink_name) + ".monitor";
 	if (pulse_get_source_info_by_name(pulse_source_info,
-					  monitor_name.c_str(), data) < 0) {
-		blog(LOG_ERROR, "Unable to get client info !");
+					  data->sink_monitor_source_name, data) < 0) {
+		blog(LOG_ERROR, "Unable to get monitor source info !");
 		return -1;
 	}
 
@@ -365,9 +371,16 @@ static int_fast32_t pulse_start_recording(struct pulse_data *data)
 
 	pa_stream_flags_t flags = PA_STREAM_ADJUST_LATENCY;
 
+	blog(LOG_INFO, "attempting to only monitor sink input %d", data->sink_input_idx);
+	int status = pa_stream_set_monitor_stream(data->stream, data->sink_input_idx);
+	if (status != 0) {
+		blog(LOG_ERROR, "Failed to only record sink input from monitor: %d", status);
+		return -1;
+	}
+
 	pulse_lock();
 	int_fast32_t ret = pa_stream_connect_record(
-		data->stream, monitor_name.c_str(), &attr, flags);
+		data->stream, data->sink_monitor_source_name, &attr, flags);
 	pulse_unlock();
 	if (ret < 0) {
 		pulse_stop_recording(data);
@@ -481,6 +494,24 @@ static void get_sink_input_cb(pa_context *c, const pa_sink_input_info *i,
 	}
 }
 
+static void get_sink_cb(pa_context *c, const pa_sink_info *i,
+			      int eol, void *userdata)
+{
+	UNUSED_PARAMETER(c);
+	PULSE_DATA(userdata);
+
+	if (eol || i->index == PA_INVALID_INDEX ||
+		data->sink_input_sink_idx == PA_INVALID_INDEX) {
+		pulse_signal(0);
+	} else if (data->sink_input_sink_idx == i->index) {
+		blog(LOG_INFO,
+			"found sink %s with index %d and monitor %s",
+			i->name, i->index, i->monitor_source_name);
+		data->sink_idx = i->index;
+		data->sink_monitor_source_name = bstrdup(i->monitor_source_name);
+	}
+}
+
 static bool get_sink_input(struct pulse_data *data)
 {
 	// Find sink-input with corresponding client
@@ -491,6 +522,22 @@ static bool get_sink_input(struct pulse_data *data)
 
 	if (data->sink_input_idx == PA_INVALID_INDEX) {
 		blog(LOG_INFO, "sink-input not found");
+		return false;
+	}
+	return true;
+}
+
+static bool get_sink(struct pulse_data *data)
+{
+	// Find sink with corresponding sink-input
+	data->sink_idx = PA_INVALID_INDEX;
+	data->sink_monitor_source_name = NULL;
+	blog(LOG_INFO, "finding sink for the corresponding sink-input");
+	processing = true;
+	pulse_get_sink_info_list(get_sink_cb, data);
+
+	if (data->sink_idx == PA_INVALID_INDEX) {
+		blog(LOG_INFO, "sink not found");
 		return false;
 	}
 	return true;
@@ -526,7 +573,7 @@ static void pulse_app_input_destroy(void *vptr)
 		pulse_stop_recording(data);
 
 	// Move existing sink-input back to old sink
-	if (data->sink_input_idx != PA_INVALID_INDEX &&
+	/*if (data->sink_input_idx != PA_INVALID_INDEX &&
 	    data->sink_input_sink_idx != PA_INVALID_INDEX) {
 
 		if (get_sink_input(data)) {
@@ -540,16 +587,16 @@ static void pulse_app_input_destroy(void *vptr)
 				blog(LOG_INFO, "move not successful");
 			}
 		}
-	}
+	}*/
 
 	// Unload loaded modules
-	auto iter = data->combine_modules->begin();
+	/*auto iter = data->combine_modules->begin();
 	while (iter != data->combine_modules->end()) {
 		pulse_unload_module(iter->second->owner_module_idx,
 				    unload_module_cb, 0);
 		delete iter->second;
 		iter++;
-	}
+	}*/
 
 	pulse_unref();
 
@@ -560,6 +607,9 @@ static void pulse_app_input_destroy(void *vptr)
 
 	if (data->sink_input_sink_name)
 		bfree(data->sink_input_sink_name);
+	
+	if (data->sink_monitor_source_name)
+		bfree(data->sink_monitor_source_name);
 
 	bfree(data);
 }
@@ -728,9 +778,9 @@ static void pulse_app_input_update(void *vptr, obs_data_t *settings)
 	if (!restart)
 		return;
 
-	if (!restore_sink(data)) {
+	/*if (!restore_sink(data)) {
 		return;
-	}
+	}*/
 
 	// Find client idx
 	data->client_idx = PA_INVALID_INDEX;
@@ -746,11 +796,15 @@ static void pulse_app_input_update(void *vptr, obs_data_t *settings)
 		return;
 	}
 
-	load_new_module(data);
-
-	if (!move_to_combine_module(data)) {
+	if (!get_sink(data)) {
 		return;
 	}
+
+	//load_new_module(data);
+
+	/*if (!move_to_combine_module(data)) {
+		return;
+	}*/
 
 	if (data->stream) {
 		blog(LOG_INFO, "stopping recording");
