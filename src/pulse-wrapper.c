@@ -386,6 +386,8 @@ int_fast32_t pulse_unload_module(uint32_t idx, pa_context_success_cb_t cb,
 
 static void subscribe_cb(pa_context *c, int success, void *userdata)
 {
+	UNUSED_PARAMETER(c);
+
 	bool *result = (bool *)userdata;
 	*result = success != 0;
 	pulse_signal(0);
