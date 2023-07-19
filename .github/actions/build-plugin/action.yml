@@ -1,0 +1,31 @@
+name: 'Setup and build plugin'
+description: 'Builds the plugin for specified architecture and build config.'
+inputs:
+  target:
+    description: 'Build target for dependencies'
+    required: true
+  config:
+    description: 'Build configuration'
+    required: false
+    default: 'Release'
+  workingDirectory:
+    description: 'Working directory for packaging'
+    required: false
+    default: ${{ github.workspace }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Run Linux Build
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        build_args=(
+          -c ${{ inputs.config }}
+          -t linux-${{ inputs.target }}
+        )
+
+        if [[ -n "${CI}" && -n "${RUNNER_DEBUG}" ]]; then
+          build_args+=(--debug)
+        fi
+
+        ${{ inputs.workingDirectory }}/.github/scripts/build-linux.sh "${build_args[@]}"

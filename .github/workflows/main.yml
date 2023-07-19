@@ -1,45 +1,106 @@
-name: "CI Multiplatform Build"
+name: Plugin Build
 
 on: [push, pull_request]
 
+env:
+  PLUGIN_NAME: 'obs-pulseaudio-app-capture'
+
 jobs:
-  ubuntu_1804:
-    name: "Ubuntu 18.04"
-    runs-on: [ubuntu-18.04]
+  clang_check:
+    name: 01 - Code Format Check
+    runs-on: ubuntu-22.04
     steps:
-      - name: "Checkout"
-        uses: actions/checkout@v2.3.3
-      - name: "Install dependencies"
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install clang-format
+        run: sudo apt-get install -y clang-format-13
+
+      - name: Run clang-format
+        run: ./.github/scripts/check-format.sh && ./.github/scripts/check-changes.sh
+
+      - name: Install cmake-format
+        run: sudo pip install cmakelang
+
+      - name: Run cmake-format
+        run: ./.github/scripts/check-cmake.sh
+
+  linux_build:
+    name: 02 - Linux
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [x86_64]
+    if: always()
+    needs: [clang_check]
+    outputs:
+      commitHash: ${{ steps.setup.outputs.commitHash }}
+    defaults:
+      run:
         shell: bash
-        working-directory: ${{ github.workspace }}
-        run: ./CI/linux/install-dependencies-ubuntu.sh
-      - name: "Build Plugin"
-        shell: bash
-        working-directory: ${{ github.workspace }}
-        run: ./CI/linux/build-ubuntu.sh``
-      - name: "Package Plugin"
-        shell: bash
-        working-directory: ${{ github.workspace }}
-        run: |
-          ./CI/linux/package.sh
-          ./CI/linux/package-ubuntu.sh
-  ubuntu_2004:
-    name: "Ubuntu 20.04"
-    runs-on: [ubuntu-20.04]
     steps:
-      - name: "Checkout"
-        uses: actions/checkout@v2.3.3
-      - name: "Install dependencies"
-        shell: bash
-        working-directory: ${{ github.workspace }}
-        run: ./CI/linux/install-dependencies-ubuntu.sh
-      - name: "Build Plugin"
-        shell: bash
-        working-directory: ${{ github.workspace }}
-        run: ./CI/linux/build-ubuntu.sh``
-      - name: "Package Plugin"
-        shell: bash
-        working-directory: ${{ github.workspace }}
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          path: plugin
+          submodules: recursive
+
+      - name: Checkout obs-studio
+        uses: actions/checkout@v3
+        with:
+          repository: 'obsproject/obs-studio'
+          path: obs-studio
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup Environment
+        working-directory: ${{ github.workspace }}/plugin
+        id: setup
         run: |
-          ./CI/linux/package.sh
-          ./CI/linux/package-ubuntu.sh
+          ## SETUP ENVIRONMENT SCRIPT
+          echo "ccacheDate=$(date +"%Y-%m-%d")" >> $GITHUB_OUTPUT
+          echo "commitHash=$(git rev-parse HEAD | cut -c1-9)" >> $GITHUB_OUTPUT
+
+      - name: Restore Compilation Cache
+        id: ccache-cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: linux-${{ matrix.arch }}-ccache-plugin-${{ steps.setup.outputs.ccacheDate }}
+          restore-keys: |
+            linux-${{ matrix.arch }}-ccache-plugin-
+
+      - name: Check for GitHub Labels
+        id: seekingTesters
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          ## GITHUB LABEL SCRIPT
+          if [[ -n "$(curl -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -s "${{ github.event.pull_request.url }}" | jq -e '.labels[] | select(.name == "Seeking Testers")')" ]]; then
+            echo 'found=true' >> $GITHUB_OUTPUT
+          else
+            echo 'found=false' >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Plugin
+        uses: ./plugin/.github/actions/build-plugin
+        with:
+          workingDirectory: ${{ github.workspace }}/plugin
+          target: ${{ matrix.arch }}
+          config: RelWithDebInfo
+
+      - name: Package Plugin
+        uses: ./plugin/.github/actions/package-plugin
+        with:
+          workingDirectory: ${{ github.workspace }}/plugin
+          target: ${{ matrix.arch }}
+          config: RelWithDebInfo
+
+      - name: Upload Build Artifact
+        if: ${{ success() && (github.event_name != 'pull_request' || steps.seekingTesters.outputs.found == 'true') }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.PLUGIN_NAME }}-linux-${{ matrix.arch }}-${{ steps.setup.outputs.commitHash }}
+          path: ${{ github.workspace }}/plugin/release/${{ env.PLUGIN_NAME }}-*-linux-${{ matrix.arch }}.*
