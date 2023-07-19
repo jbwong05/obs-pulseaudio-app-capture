@@ -98,6 +98,9 @@ void pulse_accept();
  */
 int_fast32_t pulse_get_client_info_list(pa_client_info_cb_t cb, void *userdata);
 
+int_fast32_t pulse_get_source_info_by_idx(pa_source_info_cb_t cb, uint32_t idx,
+					  void *userdata);
+
 /**
  * Request source information from a specific source
  *
@@ -144,8 +147,7 @@ pa_stream *pulse_stream_new(const char *name, const pa_sample_spec *ss,
 int_fast32_t pulse_get_sink_input_info_list(pa_sink_input_info_cb_t cb,
 					    void *userdata);
 
-int_fast32_t pulse_get_sink_info_list(pa_sink_info_cb_t cb,
-					    void *userdata);
+int_fast32_t pulse_get_sink_info_list(pa_sink_info_cb_t cb, void *userdata);
 
 int_fast32_t pulse_get_sink_name_by_index(uint32_t idx, pa_sink_info_cb_t cb,
 					  void *userdata);
@@ -162,8 +164,8 @@ int_fast32_t pulse_move_sink_input(uint32_t sink_input_idx,
 int_fast32_t pulse_unload_module(uint32_t idx, pa_context_success_cb_t cb,
 				 void *userdata);
 
-int_fast32_t pulse_subscribe_sink_input_events(pa_context_subscribe_cb_t cb,
-					       void *userdata);
+int_fast32_t pulse_subscribe_events(pa_context_subscribe_cb_t cb,
+				    void *userdata);
 
 #ifdef __cplusplus
 }

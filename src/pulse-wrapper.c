@@ -185,6 +185,29 @@ int_fast32_t pulse_get_client_info_list(pa_client_info_cb_t cb, void *userdata)
 	return 0;
 }
 
+int_fast32_t pulse_get_source_info_by_idx(pa_source_info_cb_t cb, uint32_t idx,
+					   void *userdata)
+{
+	if (pulse_context_ready() < 0)
+		return -1;
+
+	pulse_lock();
+
+	pa_operation *op = pa_context_get_source_info_by_index(
+		pulse_context, idx, cb, userdata);
+	if (!op) {
+		pulse_unlock();
+		return -1;
+	}
+	while (pa_operation_get_state(op) == PA_OPERATION_RUNNING)
+		pulse_wait();
+	pa_operation_unref(op);
+
+	pulse_unlock();
+
+	return 0;
+}
+
 int_fast32_t pulse_get_source_info_by_name(pa_source_info_cb_t cb,
 					   const char *name, void *userdata)
 {
@@ -416,7 +439,7 @@ static void subscribe_cb(pa_context *c, int success, void *userdata)
 	pulse_signal(0);
 }
 
-int_fast32_t pulse_subscribe_sink_input_events(pa_context_subscribe_cb_t cb,
+int_fast32_t pulse_subscribe_events(pa_context_subscribe_cb_t cb,
 					       void *userdata)
 {
 	if (pulse_context_ready() < 0)
@@ -427,7 +450,7 @@ int_fast32_t pulse_subscribe_sink_input_events(pa_context_subscribe_cb_t cb,
 	bool success = true;
 
 	pa_operation *op = pa_context_subscribe(pulse_context,
-						PA_SUBSCRIPTION_MASK_SINK_INPUT,
+						PA_SUBSCRIPTION_MASK_SINK_INPUT | PA_SUBSCRIPTION_MASK_SINK,
 						subscribe_cb, &success);
 	if (!op) {
 		pulse_unlock();
