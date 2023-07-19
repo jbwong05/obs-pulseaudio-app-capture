@@ -186,7 +186,7 @@ int_fast32_t pulse_get_client_info_list(pa_client_info_cb_t cb, void *userdata)
 }
 
 int_fast32_t pulse_get_source_info_by_idx(pa_source_info_cb_t cb, uint32_t idx,
-					   void *userdata)
+					  void *userdata)
 {
 	if (pulse_context_ready() < 0)
 		return -1;
@@ -292,16 +292,15 @@ int_fast32_t pulse_get_sink_input_info_list(pa_sink_input_info_cb_t cb,
 	return 0;
 }
 
-int_fast32_t pulse_get_sink_info_list(pa_sink_info_cb_t cb,
-					    void *userdata)
+int_fast32_t pulse_get_sink_info_list(pa_sink_info_cb_t cb, void *userdata)
 {
 	if (pulse_context_ready() < 0)
 		return -1;
 
 	pulse_lock();
 
-	pa_operation *op = pa_context_get_sink_info_list(pulse_context,
-							       cb, userdata);
+	pa_operation *op =
+		pa_context_get_sink_info_list(pulse_context, cb, userdata);
 	if (!op) {
 		pulse_unlock();
 		return -1;
@@ -440,7 +439,7 @@ static void subscribe_cb(pa_context *c, int success, void *userdata)
 }
 
 int_fast32_t pulse_subscribe_events(pa_context_subscribe_cb_t cb,
-					       void *userdata)
+				    void *userdata)
 {
 	if (pulse_context_ready() < 0)
 		return -1;
@@ -449,9 +448,10 @@ int_fast32_t pulse_subscribe_events(pa_context_subscribe_cb_t cb,
 
 	bool success = true;
 
-	pa_operation *op = pa_context_subscribe(pulse_context,
-						PA_SUBSCRIPTION_MASK_SINK_INPUT | PA_SUBSCRIPTION_MASK_SINK,
-						subscribe_cb, &success);
+	pa_operation *op = pa_context_subscribe(
+		pulse_context,
+		PA_SUBSCRIPTION_MASK_SINK_INPUT | PA_SUBSCRIPTION_MASK_SINK,
+		subscribe_cb, &success);
 	if (!op) {
 		pulse_unlock();
 		return -1;

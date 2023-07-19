@@ -301,7 +301,8 @@ static int_fast32_t pulse_start_recording(struct pulse_data *data)
 	//string monitor_name = "OBSPulseAppRecord" +
 	//		      string(data->sink_input_sink_name) + ".monitor";
 	if (pulse_get_source_info_by_name(pulse_source_info,
-					  data->sink_monitor_source_name, data) < 0) {
+					  data->sink_monitor_source_name,
+					  data) < 0) {
 		blog(LOG_ERROR, "Unable to get monitor source info !");
 		return -1;
 	}
@@ -348,10 +349,14 @@ static int_fast32_t pulse_start_recording(struct pulse_data *data)
 
 	pa_stream_flags_t flags = PA_STREAM_ADJUST_LATENCY;
 
-	blog(LOG_INFO, "attempting to only monitor sink input %d", data->sink_input_idx);
-	int status = pa_stream_set_monitor_stream(data->stream, data->sink_input_idx);
+	blog(LOG_INFO, "attempting to only monitor sink input %d",
+	     data->sink_input_idx);
+	int status = pa_stream_set_monitor_stream(data->stream,
+						  data->sink_input_idx);
 	if (status != 0) {
-		blog(LOG_ERROR, "Failed to only record sink input from monitor: %d", status);
+		blog(LOG_ERROR,
+		     "Failed to only record sink input from monitor: %d",
+		     status);
 		return -1;
 	}
 
@@ -503,7 +508,7 @@ static void pulse_app_input_destroy(void *vptr)
 
 	if (data->client)
 		bfree(data->client);
-	
+
 	if (data->sink_monitor_source_name)
 		bfree(data->sink_monitor_source_name);
 
@@ -541,15 +546,15 @@ static void refresh_recording(struct pulse_data *data)
 	if (!get_sink_input(data)) {
 		return;
 	}
-	bool change = prev_sink_input_idx != data->sink_input_idx || prev_sink_idx != data->sink_idx;
+	bool change = prev_sink_input_idx != data->sink_input_idx ||
+		      prev_sink_idx != data->sink_idx;
 
-	if(change) {
+	if (change) {
 		if (data->stream) {
 			blog(LOG_INFO, "stopping recording");
 			pulse_stop_recording(data);
 		}
 
-		// Start recording from the combine module
 		blog(LOG_INFO, "starting recording");
 		pulse_start_recording(data);
 	}
